@@ -5,10 +5,11 @@ import plotly.express as px
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 # ---------------- Page Config ----------------
 st.set_page_config(
@@ -56,6 +57,7 @@ st.dataframe(df.head(), use_container_width=True)
 # ---------------- Column Types ----------------
 num_cols = df.select_dtypes(include=np.number).columns.tolist()
 cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
+text_cols = cat_cols.copy()  # treat all non-numeric as potential text for TF-IDF
 
 # ---------------- Visualization ----------------
 st.subheader("📈 Interactive Visualization")
@@ -118,27 +120,37 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 st.info(f"Data split: Train = {X_train.shape[0]} rows, Test = {X_test.shape[0]} rows")
 
-# ColumnTransformer to handle numeric + categorical
+# Detect numeric, categorical, and text columns
 numeric_features = X.select_dtypes(include=np.number).columns.tolist()
-categorical_features = X.select_dtypes(exclude=np.number).columns.tolist()
+categorical_features = [col for col in X.select_dtypes(exclude=np.number).columns.tolist() if col not in text_cols]
 
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', StandardScaler(), numeric_features),
-        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
-    ]
-)
-
-if model_choice == "Logistic Regression":
-    model = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('classifier', LogisticRegression(max_iter=1000))
-    ])
+# Combine multiple text columns if present
+if len(text_cols) > 0:
+    for col in text_cols:
+        X_train[col] = X_train[col].astype(str)
+        X_test[col] = X_test[col].astype(str)
+    X_train['__text_combined__'] = X_train[text_cols].agg(' '.join, axis=1)
+    X_test['__text_combined__'] = X_test[text_cols].agg(' '.join, axis=1)
+    text_feature = '__text_combined__'
 else:
-    model = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('classifier', RandomForestClassifier(n_estimators=200, random_state=42))
-    ])
+    text_feature = None
+
+# ColumnTransformer including TF-IDF for text
+transformers = [('num', StandardScaler(), numeric_features)]
+if categorical_features:
+    transformers.append(('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features))
+if text_feature:
+    transformers.append(('text', TfidfVectorizer(), text_feature))
+
+preprocessor = ColumnTransformer(transformers=transformers)
+
+# Pipeline
+if model_choice == "Logistic Regression":
+    model = Pipeline(steps=[('preprocessor', preprocessor),
+                            ('classifier', LogisticRegression(max_iter=1000))])
+else:
+    model = Pipeline(steps=[('preprocessor', preprocessor),
+                            ('classifier', RandomForestClassifier(n_estimators=200, random_state=42))])
 
 train_btn = st.button("🚀 Train Model")
 
