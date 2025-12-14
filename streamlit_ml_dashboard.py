@@ -59,24 +59,32 @@ cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
 
 # ---------------- Visualization ----------------
 st.subheader("📈 Interactive Visualization")
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     x_col = st.selectbox("X Axis", df.columns)
 with col2:
     y_col = st.selectbox("Y Axis", num_cols)
 with col3:
-    chart_type = st.selectbox("Chart Type", ["Auto", "Scatter", "Bar", "Line", "Box", "Histogram"])
+    chart_type = st.selectbox("Chart Type", ["Auto", "Scatter", "Bar", "Line", "Box", "Histogram", "Pie", "Heatmap"])
+with col4:
+    color_col = st.selectbox("Color (optional)", [None]+df.columns.tolist())
 
+# Generate plots based on selection
 if chart_type == "Histogram":
-    fig = px.histogram(df, x=x_col)
+    fig = px.histogram(df, x=x_col, color=color_col)
 elif chart_type == "Bar":
-    fig = px.bar(df, x=x_col, y=y_col)
+    fig = px.bar(df, x=x_col, y=y_col, color=color_col)
 elif chart_type == "Line":
-    fig = px.line(df, x=x_col, y=y_col)
+    fig = px.line(df, x=x_col, y=y_col, color=color_col)
 elif chart_type == "Box":
-    fig = px.box(df, x=x_col, y=y_col)
+    fig = px.box(df, x=x_col, y=y_col, color=color_col)
+elif chart_type == "Pie":
+    fig = px.pie(df, names=x_col, values=y_col if y_col else None, color=color_col)
+elif chart_type == "Heatmap":
+    corr = df[num_cols].corr()
+    fig = px.imshow(corr, text_auto=True, color_continuous_scale='Viridis')
 else:
-    fig = px.scatter(df, x=x_col, y=y_col)
+    fig = px.scatter(df, x=x_col, y=y_col, color=color_col)
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -104,9 +112,11 @@ for col in X.columns:
     else:
         X[col].fillna(X[col].mode()[0], inplace=True)
 
+# Split data and show sizes
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y))>1 else None
 )
+st.info(f"Data split: Train = {X_train.shape[0]} rows, Test = {X_test.shape[0]} rows")
 
 # ColumnTransformer to handle numeric + categorical
 numeric_features = X.select_dtypes(include=np.number).columns.tolist()
@@ -149,11 +159,17 @@ if train_btn:
         st.metric("Test Size", X_test.shape[0])
 
     st.markdown("### 📊 Confusion Matrix")
-    fig_cm = px.imshow(cm, text_auto=True)
+    fig_cm = px.imshow(cm, text_auto=True, color_continuous_scale='Viridis')
     st.plotly_chart(fig_cm, use_container_width=True)
 
     st.markdown("### 📄 Classification Report")
     st.text(classification_report(y_test, preds))
+
+    st.subheader("📝 Sample Predictions")
+    sample_df = X_test.copy()
+    sample_df['Actual'] = y_test
+    sample_df['Predicted'] = preds
+    st.dataframe(sample_df.head(10), use_container_width=True)
 
     st.success("✅ Training completed successfully")
 
