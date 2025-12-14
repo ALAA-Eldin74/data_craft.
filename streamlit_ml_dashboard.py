@@ -5,47 +5,32 @@ import plotly.express as px
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 # ---------------- Page Config ----------------
 st.set_page_config(
-    page_title="Smart ML Platform",
+    page_title="Professional ML Platform",
     page_icon="🤖",
     layout="wide"
 )
 
-# ---------------- Custom CSS ----------------
-st.markdown("""
-<style>
-.block-container {padding-top: 1.5rem;}
-.metric-card {
-    background-color: #0e1117;
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # ---------------- Sidebar ----------------
-st.sidebar.title("🤖 Smart ML Platform")
-st.sidebar.markdown("Upload → Visualize → Train → Evaluate")
+st.sidebar.title("🤖 Professional ML Platform")
+st.sidebar.markdown("Upload → Clean → Features → Model → Evaluate")
 
 uploaded_file = st.sidebar.file_uploader("📁 Upload Dataset", type=["csv", "xlsx"])
 
-# ---------------- Main ----------------
-st.title("📊 Interactive Data Science Dashboard")
-st.caption("No code • Smart visualization • Automatic model selection")
-
+# ---------------- Load Data ----------------
 if uploaded_file is None:
     st.info("⬅️ Upload a dataset from the sidebar to get started")
     st.stop()
 
-# ---------------- Load Data ----------------
 if uploaded_file.name.endswith("csv"):
     df = pd.read_csv(uploaded_file)
 else:
@@ -57,7 +42,7 @@ st.dataframe(df.head(), use_container_width=True)
 # ---------------- Column Types ----------------
 num_cols = df.select_dtypes(include=np.number).columns.tolist()
 cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
-text_cols = cat_cols.copy()  # treat all non-numeric as potential text for TF-IDF
+text_cols = cat_cols.copy()
 
 # ---------------- Visualization ----------------
 st.subheader("📈 Interactive Visualization")
@@ -67,11 +52,10 @@ with col1:
 with col2:
     y_col = st.selectbox("Y Axis", num_cols)
 with col3:
-    chart_type = st.selectbox("Chart Type", ["Auto", "Scatter", "Bar", "Line", "Box", "Histogram", "Pie", "Heatmap"])
+    chart_type = st.selectbox("Chart Type", ["Scatter", "Bar", "Line", "Box", "Histogram", "Pie", "Heatmap"])
 with col4:
     color_col = st.selectbox("Color (optional)", [None]+df.columns.tolist())
 
-# Generate plots based on selection
 if chart_type == "Histogram":
     fig = px.histogram(df, x=x_col, color=color_col)
 elif chart_type == "Bar":
@@ -95,47 +79,43 @@ st.subheader("🧠 Machine Learning")
 with st.expander("⚙️ Model Settings", expanded=True):
     target = st.selectbox("🎯 Select Target Column", df.columns)
     features = st.multiselect("📌 Select Feature Columns", [col for col in df.columns if col != target], default=[col for col in df.columns if col != target])
-    model_choice = st.selectbox("🤖 Model", ["Logistic Regression", "Random Forest"])
+    model_choice = st.selectbox("🤖 Model", ["Logistic Regression", "Random Forest", "Gradient Boosting", "SVM", "KNN"])
 
 X = df[features]
 y = df[target]
 
-# Handle binary target encoding automatically
 if y.nunique() == 2 and y.dtype != np.number:
     le = LabelEncoder()
     y = le.fit_transform(y)
     st.info(f"Binary target detected. Values converted to 0/1.")
 
-# Fill missing values
 X = X.copy()
 for col in X.columns:
     if X[col].dtype == 'number' or np.issubdtype(X[col].dtype, np.number):
         X[col].fillna(X[col].mean(), inplace=True)
     else:
-        X[col].fillna(X[col].mode()[0], inplace=True)
+        X[col].fillna(X[col].astype(str).mode()[0], inplace=True)
 
-# Split data and show sizes
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y))>1 else None
-)
-st.info(f"Data split: Train = {X_train.shape[0]} rows, Test = {X_test.shape[0]} rows")
+# Train/Test split with safe stratify
+try:
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+except ValueError:
+    st.warning("Stratify failed due to small class sizes. Splitting without stratify.")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
 
-# Detect numeric, categorical, and text columns
 numeric_features = X.select_dtypes(include=np.number).columns.tolist()
 categorical_features = [col for col in X.select_dtypes(exclude=np.number).columns.tolist() if col not in text_cols]
 
-# Combine multiple text columns if present
 if len(text_cols) > 0:
     for col in text_cols:
-        X_train[col] = X_train[col].astype(str)
-        X_test[col] = X_test[col].astype(str)
+        X_train[col] = X_train[col].astype(str).fillna('')
+        X_test[col] = X_test[col].astype(str).fillna('')
     X_train['__text_combined__'] = X_train[text_cols].agg(' '.join, axis=1)
     X_test['__text_combined__'] = X_test[text_cols].agg(' '.join, axis=1)
     text_feature = '__text_combined__'
 else:
     text_feature = None
 
-# ColumnTransformer including TF-IDF for text
 transformers = [('num', StandardScaler(), numeric_features)]
 if categorical_features:
     transformers.append(('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features))
@@ -144,13 +124,16 @@ if text_feature:
 
 preprocessor = ColumnTransformer(transformers=transformers)
 
-# Pipeline
 if model_choice == "Logistic Regression":
-    model = Pipeline(steps=[('preprocessor', preprocessor),
-                            ('classifier', LogisticRegression(max_iter=1000))])
+    model = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', LogisticRegression(max_iter=1000))])
+elif model_choice == "Random Forest":
+    model = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', RandomForestClassifier(n_estimators=200, random_state=42))])
+elif model_choice == "Gradient Boosting":
+    model = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', GradientBoostingClassifier())])
+elif model_choice == "SVM":
+    model = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', SVC())])
 else:
-    model = Pipeline(steps=[('preprocessor', preprocessor),
-                            ('classifier', RandomForestClassifier(n_estimators=200, random_state=42))])
+    model = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', KNeighborsClassifier())])
 
 train_btn = st.button("🚀 Train Model")
 
@@ -187,4 +170,4 @@ if train_btn:
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit | Smart ML Platform")
+st.caption("Built with ❤️ using Streamlit | Professional ML Platform")
