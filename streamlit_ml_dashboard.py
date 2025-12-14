@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
@@ -58,7 +59,6 @@ cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
 
 # ---------------- Visualization ----------------
 st.subheader("📈 Interactive Visualization")
-
 col1, col2, col3 = st.columns(3)
 with col1:
     x_col = st.selectbox("X Axis", df.columns)
@@ -82,28 +82,54 @@ st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- Machine Learning ----------------
 st.subheader("🧠 Machine Learning")
-
 with st.expander("⚙️ Model Settings", expanded=True):
-    target = st.selectbox("🎯 Select Target Column", cat_cols)
-    features = st.multiselect("📌 Select Feature Columns", num_cols, default=num_cols)
+    target = st.selectbox("🎯 Select Target Column", df.columns)
+    features = st.multiselect("📌 Select Feature Columns", [col for col in df.columns if col != target], default=[col for col in df.columns if col != target])
     model_choice = st.selectbox("🤖 Model", ["Logistic Regression", "Random Forest"])
 
 X = df[features]
 y = df[target]
 
+# Handle binary target encoding automatically
+if y.nunique() == 2 and y.dtype != np.number:
+    le = LabelEncoder()
+    y = le.fit_transform(y)
+    st.info(f"Binary target detected. Values converted to 0/1.")
+
+# Fill missing values
+X = X.copy()
+for col in X.columns:
+    if X[col].dtype == 'number' or np.issubdtype(X[col].dtype, np.number):
+        X[col].fillna(X[col].mean(), inplace=True)
+    else:
+        X[col].fillna(X[col].mode()[0], inplace=True)
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42, stratify=y
+    X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y))>1 else None
+)
+
+# ColumnTransformer to handle numeric + categorical
+numeric_features = X.select_dtypes(include=np.number).columns.tolist()
+categorical_features = X.select_dtypes(exclude=np.number).columns.tolist()
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_features),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+    ]
 )
 
 if model_choice == "Logistic Regression":
-    model = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(max_iter=1000))
+    model = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('classifier', LogisticRegression(max_iter=1000))
     ])
 else:
-    model = RandomForestClassifier(n_estimators=200, random_state=42)
+    model = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('classifier', RandomForestClassifier(n_estimators=200, random_state=42))
+    ])
 
-# ---------------- Train ----------------
 train_btn = st.button("🚀 Train Model")
 
 if train_btn:
@@ -114,7 +140,6 @@ if train_btn:
     cm = confusion_matrix(y_test, preds)
 
     st.subheader("🏆 Model Performance")
-
     m1, m2, m3 = st.columns(3)
     with m1:
         st.metric("Accuracy", f"{acc:.2%}")
