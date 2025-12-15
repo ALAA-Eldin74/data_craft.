@@ -170,4 +170,4 @@ with tab2:
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.markdown("Built with ❤️ using Streamlit | Professional ML Platform")
+st.markdown("Built with ❤️ using Streamlit | Professional ML Platform")# 
