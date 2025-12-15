@@ -34,7 +34,58 @@ else:
 
 st.subheader("🔍 Data Preview")
 st.dataframe(df.head(), use_container_width=True)
+# ================== DATA DESCRIPTION & STATISTICS ==================
+st.subheader("📊 Dataset Overview & Statistics")
 
+# ---- Basic Info ----
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Number of Rows", df.shape[0])
+with col2:
+    st.metric("Number of Columns", df.shape[1])
+with col3:
+    st.metric("Total Missing Values", df.isnull().sum().sum())
+
+# ---- Column Details ----
+st.markdown("### 🧾 Column Information")
+desc_df = pd.DataFrame({
+    "Column Name": df.columns,
+    "Data Type": df.dtypes.astype(str),
+    "Missing Values": df.isnull().sum().values,
+    "Unique Values": df.nunique().values
+})
+st.dataframe(desc_df, use_container_width=True)
+
+# ---- Numerical Statistics ----
+st.markdown("### 📐 Numerical Statistics (Mean, Median, Std, Min, Max)")
+num_cols = df.select_dtypes(include=np.number).columns.tolist()
+
+if len(num_cols) > 0:
+    stats_df = pd.DataFrame({
+        "Column": num_cols,
+        "Mean": [df[col].mean() for col in num_cols],
+        "Median": [df[col].median() for col in num_cols],
+        "Std": [df[col].std() for col in num_cols],
+        "Min": [df[col].min() for col in num_cols],
+        "Max": [df[col].max() for col in num_cols]
+    })
+    st.dataframe(stats_df.round(2), use_container_width=True)
+else:
+    st.info("No numerical columns detected.")
+
+# ---- Categorical Summary ----
+st.markdown("### 🏷️ Categorical Summary")
+cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
+
+if len(cat_cols) > 0:
+    cat_summary = pd.DataFrame({
+        "Column": cat_cols,
+        "Most Frequent Value": [df[col].mode()[0] for col in cat_cols],
+        "Frequency": [df[col].value_counts().iloc[0] for col in cat_cols]
+    })
+    st.dataframe(cat_summary, use_container_width=True)
+else:
+    st.info("No categorical columns detected.")
 # ---------------- Column Types ----------------
 num_cols = df.select_dtypes(include=np.number).columns.tolist()
 cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
