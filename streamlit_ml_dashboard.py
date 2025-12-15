@@ -2,24 +2,29 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-from sklearn.model_selection import train_test_split, cross_val_score, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
 
+# ---------------- Session State ----------------
+for step in ["preview", "desc", "viz", "ml"]:
+    if f"show_{step}" not in st.session_state:
+        st.session_state[f"show_{step}"] = False
+
 # ---------------- Sidebar ----------------
 st.sidebar.title("🤖 Pro ML Platform")
-st.sidebar.markdown("Upload Dataset → Explore → Visualize → Train → Recommend")
+st.sidebar.markdown("Upload → Describe → Visualize → Model → Evaluate")
 
 uploaded_file = st.sidebar.file_uploader("📁 Upload Dataset", type=["csv", "xlsx"])
 
@@ -33,39 +38,65 @@ if uploaded_file.name.endswith("csv"):
 else:
     df = pd.read_excel(uploaded_file)
 
-# ---------------- Tabs ----------------
-tab1, tab2 = st.tabs(["📊 Dataset Overview", "🧠 ML & Visualization"])
+# ================= Step 1: Preview =================
+if st.button("🔍 Step 1: Show Data Preview"):
+    st.session_state.show_preview = True
 
-# ================= TAB 1: Dataset Overview =================
-with tab1:
+if st.session_state.show_preview:
     st.subheader("🔍 Data Preview")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df.head(), use_container_width=True)
 
-    st.subheader("🧾 Column Information")
+    if st.button("📊 Step 2: Go to Dataset Description"):
+        st.session_state.show_desc = True
+
+# ================= Step 2: Description =================
+if st.session_state.show_desc:
+    st.subheader("📊 Dataset Overview & Statistics")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Rows", df.shape[0])
+    with col2:
+        st.metric("Columns", df.shape[1])
+    with col3:
+        st.metric("Missing Values", df.isnull().sum().sum())
+
+    st.markdown("### 🧾 Column Information")
     desc_df = pd.DataFrame({
         "Column": df.columns,
         "Type": df.dtypes.astype(str),
-        "Missing Values": df.isnull().sum().values,
-        "Unique Values": df.nunique().values
+        "Missing": df.isnull().sum().values,
+        "Unique": df.nunique().values
     })
     st.dataframe(desc_df, use_container_width=True)
 
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
     if num_cols:
-        st.subheader("📐 Numerical Statistics")
-        stats_df = df[num_cols].describe().T
+        st.markdown("### 📐 Numerical Statistics")
+        stats_df = pd.DataFrame({
+            "Column": num_cols,
+            "Mean": [df[c].mean() for c in num_cols],
+            "Median": [df[c].median() for c in num_cols],
+            "Std": [df[c].std() for c in num_cols],
+            "Min": [df[c].min() for c in num_cols],
+            "Max": [df[c].max() for c in num_cols],
+        })
         st.dataframe(stats_df.round(2), use_container_width=True)
 
-# ================= TAB 2: Visualization + ML =================
-with tab2:
+    if st.button("📈 Step 3: Go to Visualization"):
+        st.session_state.show_viz = True
+
+# ================= Step 3: Visualization =================
+if st.session_state.show_viz:
     st.subheader("📈 Interactive Visualization")
 
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         x_col = st.selectbox("X Axis", df.columns)
     with c2:
-        y_col = st.selectbox("Y Axis", num_cols if num_cols else df.columns)
+        y_col = st.selectbox("Y Axis", num_cols)
     with c3:
         chart_type = st.selectbox(
             "Chart Type",
@@ -91,8 +122,11 @@ with tab2:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------------- Machine Learning ----------------
-    st.markdown("---")
+    if st.button("🧠 Step 4: Go to Machine Learning"):
+        st.session_state.show_ml = True
+
+# ================= Step 4: Machine Learning =================
+if st.session_state.show_ml:
     st.subheader("🧠 Machine Learning")
 
     target = st.selectbox("🎯 Target Column", df.columns)
@@ -105,20 +139,18 @@ with tab2:
     X = df[features].copy()
     y = df[target]
 
-    # Encode target if needed
-    if y.nunique() == 2 and y.dtype == object:
+    if y.nunique() == 2 and y.dtype != np.number:
         y = LabelEncoder().fit_transform(y)
-        st.info("⚠️ Binary classification detected → Recall / F1 recommended")
 
-    # Handle missing values
     for col in X.columns:
         if np.issubdtype(X[col].dtype, np.number):
             X[col].fillna(X[col].mean(), inplace=True)
         else:
             X[col].fillna(X[col].mode()[0], inplace=True)
 
-    # Split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.25, random_state=42
+    )
 
     num_features = X.select_dtypes(include=np.number).columns.tolist()
     cat_features = X.select_dtypes(exclude=np.number).columns.tolist()
@@ -130,103 +162,51 @@ with tab2:
 
     models = {
         "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Random Forest": RandomForestClassifier(),
+        "Random Forest": RandomForestClassifier(n_estimators=200),
         "Gradient Boosting": GradientBoostingClassifier(),
         "SVM": SVC(probability=True),
         "KNN": KNeighborsClassifier()
     }
 
-    metric = st.selectbox(
-        "📏 Model Selection Metric",
-        ["accuracy", "f1", "recall", "precision"]
-    )
-
-    hyperparam_tune = st.checkbox("⚡ Enable Hyperparameter Tuning (RandomizedSearchCV)")
-
-    if st.button("🚀 Train & Recommend Best Model"):
-        best_score = 0
+    if st.button("🚀 Step 5: Train & Recommend Model"):
+        best_acc = 0
         best_model = None
         best_name = ""
 
-        st.markdown("### 🔍 Cross Validation Results")
-
         for name, clf in models.items():
-            pipe = Pipeline([("prep", preprocessor), ("model", clf)])
-            if hyperparam_tune:
-                # Example hyperparameter grids
-                param_grid = {}
-                if name == "Random Forest":
-                    param_grid = {"model__n_estimators": [100,200,300],
-                                  "model__max_depth": [None,5,10]}
-                elif name == "Gradient Boosting":
-                    param_grid = {"model__n_estimators": [100,200],
-                                  "model__learning_rate": [0.01,0.1,0.2]}
-                search = RandomizedSearchCV(pipe, param_grid, cv=3, scoring=metric, n_iter=4, random_state=42)
-                search.fit(X_train, y_train)
-                mean_score = search.best_score_
-                clf_best = search.best_estimator_
-            else:
-                scores = cross_val_score(pipe, X_train, y_train, cv=3, scoring=metric)
-                mean_score = scores.mean()
-                clf_best = pipe.fit(X_train, y_train)
+            pipe = Pipeline([
+                ("prep", preprocessor),
+                ("model", clf)
+            ])
+            scores = cross_val_score(pipe, X_train, y_train, cv=3)
+            mean_score = scores.mean()
+            st.write(f"{name}: {mean_score:.2%}")
 
-            st.write(f"**{name}** → {mean_score:.2%}")
-
-            if mean_score > best_score:
-                best_score = mean_score
-                best_model = clf_best
+            if mean_score > best_acc:
+                best_acc = mean_score
+                best_model = pipe
                 best_name = name
 
-        st.success(f"🧠 Recommended Model based on {metric.upper()}: **{best_name}**")
+        st.success(f"Best Model: {best_name}")
 
+        best_model.fit(X_train, y_train)
         preds = best_model.predict(X_test)
-        st.metric("✅ Test Accuracy", f"{accuracy_score(y_test, preds):.2%}")
 
-        # Confusion Matrix
-        st.subheader("📊 Confusion Matrix")
-        cm = confusion_matrix(y_test, preds)
-        st.plotly_chart(px.imshow(cm, text_auto=True), use_container_width=True)
+        st.metric("Test Accuracy", f"{accuracy_score(y_test, preds):.2%}")
 
-        # Classification Report
-        st.subheader("📄 Classification Report")
+        st.markdown("### 📊 Confusion Matrix")
+        st.plotly_chart(px.imshow(confusion_matrix(y_test, preds), text_auto=True))
+
+        st.markdown("### 📄 Classification Report")
         st.text(classification_report(y_test, preds))
-
-        # ROC Curve for binary
-        if len(np.unique(y)) == 2:
-            st.subheader("📈 ROC Curve")
-            y_prob = best_model.predict_proba(X_test)[:,1]
-            fpr, tpr, _ = roc_curve(y_test, y_prob)
-            roc_auc = auc(fpr, tpr)
-            plt.figure()
-            plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-            plt.plot([0,1],[0,1],'k--')
-            plt.xlabel("False Positive Rate")
-            plt.ylabel("True Positive Rate")
-            plt.title("ROC Curve")
-            plt.legend(loc="lower right")
-            st.pyplot(plt)
-
-            # Precision-Recall Curve
-            st.subheader("📈 Precision-Recall Curve")
-            precision, recall, _ = precision_recall_curve(y_test, y_prob)
-            pr_auc = auc(recall, precision)
-            plt.figure()
-            plt.plot(recall, precision, label=f"AUC = {pr_auc:.2f}")
-            plt.xlabel("Recall")
-            plt.ylabel("Precision")
-            plt.title("Precision-Recall Curve")
-            plt.legend(loc="lower right")
-            st.pyplot(plt)
-
-        # Feature importance for tree-based models
-        if best_name in ["Random Forest", "Gradient Boosting"]:
-            st.subheader("🌟 Feature Importance")
-            importances = best_model.named_steps['model'].feature_importances_
-            feature_names = best_model.named_steps['prep'].transformers_[0][2] + \
-                            list(best_model.named_steps['prep'].transformers_[1][1].get_feature_names_out())
-            fi_df = pd.DataFrame({"Feature": feature_names, "Importance": importances}).sort_values(by="Importance", ascending=False)
-            st.dataframe(fi_df, use_container_width=True)
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit | Pro ML Platform")
+st.caption("Built with ❤️ using Streamlit | Professional ML Platform")هقولك تعديلات تعدل عليها انا عايز المودل يقترح احسن🧠 Machine Learningبس اليوزر الي يختار  ويقترح احسن موديل مش نمنحيث اعلي اكيورسي  ثانيا عايز الداتا وال🔍 Data Preview
+
+🔍 Data Preview
+
+🧾 Column Information
+📐 Numerical Statistics
+
+ في tap واحد والتاب التاني في باقي الحاجه  
