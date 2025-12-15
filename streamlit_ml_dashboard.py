@@ -202,11 +202,4 @@ if st.session_state.show_ml:
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit | Professional ML Platform")هقولك تعديلات تعدل عليها انا عايز المودل يقترح احسن🧠 Machine Learningبس اليوزر الي يختار  ويقترح احسن موديل مش نمنحيث اعلي اكيورسي  ثانيا عايز الداتا وال🔍 Data Preview
-
-🔍 Data Preview
-
-🧾 Column Information
-📐 Numerical Statistics
-
- في tap واحد والتاب التاني في باقي الحاجه  
+st.caption("Built with ❤️ using Streamlit | Professional ML Platform")
