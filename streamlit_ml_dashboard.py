@@ -14,7 +14,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
 
