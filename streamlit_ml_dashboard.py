@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from sklearn.model_selection import train_test_split, cross_val_score, RandomizedSearchCV
+
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,9 +17,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
 
+# ---------------- Session State ----------------
+for step in ["preview", "desc", "viz", "ml"]:
+    if f"show_{step}" not in st.session_state:
+        st.session_state[f"show_{step}"] = False
+
 # ---------------- Sidebar ----------------
 st.sidebar.title("🤖 Pro ML Platform")
-st.sidebar.markdown("Upload → Clean → Features → Model → Evaluate")
+st.sidebar.markdown("Upload → Describe → Visualize → Model → Evaluate")
 
 uploaded_file = st.sidebar.file_uploader("📁 Upload Dataset", type=["csv", "xlsx"])
 
@@ -32,199 +38,168 @@ if uploaded_file.name.endswith("csv"):
 else:
     df = pd.read_excel(uploaded_file)
 
-st.subheader("🔍 Data Preview")
-st.dataframe(df.head(), use_container_width=True)
-# ================== DATA DESCRIPTION & STATISTICS ==================
-st.subheader("📊 Dataset Overview & Statistics")
+# ================= Step 1: Preview =================
+if st.button("🔍 Step 1: Show Data Preview"):
+    st.session_state.show_preview = True
 
-# ---- Basic Info ----
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Number of Rows", df.shape[0])
-with col2:
-    st.metric("Number of Columns", df.shape[1])
-with col3:
-    st.metric("Total Missing Values", df.isnull().sum().sum())
+if st.session_state.show_preview:
+    st.subheader("🔍 Data Preview")
+    st.dataframe(df.head(), use_container_width=True)
 
-# ---- Column Details ----
-st.markdown("### 🧾 Column Information")
-desc_df = pd.DataFrame({
-    "Column Name": df.columns,
-    "Data Type": df.dtypes.astype(str),
-    "Missing Values": df.isnull().sum().values,
-    "Unique Values": df.nunique().values
-})
-st.dataframe(desc_df, use_container_width=True)
+    if st.button("📊 Step 2: Go to Dataset Description"):
+        st.session_state.show_desc = True
 
-# ---- Numerical Statistics ----
-st.markdown("### 📐 Numerical Statistics (Mean, Median, Std, Min, Max)")
-num_cols = df.select_dtypes(include=np.number).columns.tolist()
+# ================= Step 2: Description =================
+if st.session_state.show_desc:
+    st.subheader("📊 Dataset Overview & Statistics")
 
-if len(num_cols) > 0:
-    stats_df = pd.DataFrame({
-        "Column": num_cols,
-        "Mean": [df[col].mean() for col in num_cols],
-        "Median": [df[col].median() for col in num_cols],
-        "Std": [df[col].std() for col in num_cols],
-        "Min": [df[col].min() for col in num_cols],
-        "Max": [df[col].max() for col in num_cols]
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Rows", df.shape[0])
+    with col2:
+        st.metric("Columns", df.shape[1])
+    with col3:
+        st.metric("Missing Values", df.isnull().sum().sum())
+
+    st.markdown("### 🧾 Column Information")
+    desc_df = pd.DataFrame({
+        "Column": df.columns,
+        "Type": df.dtypes.astype(str),
+        "Missing": df.isnull().sum().values,
+        "Unique": df.nunique().values
     })
-    st.dataframe(stats_df.round(2), use_container_width=True)
-else:
-    st.info("No numerical columns detected.")
+    st.dataframe(desc_df, use_container_width=True)
 
-# ---- Categorical Summary ----
-st.markdown("### 🏷️ Categorical Summary")
-cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
+    num_cols = df.select_dtypes(include=np.number).columns.tolist()
+    if num_cols:
+        st.markdown("### 📐 Numerical Statistics")
+        stats_df = pd.DataFrame({
+            "Column": num_cols,
+            "Mean": [df[c].mean() for c in num_cols],
+            "Median": [df[c].median() for c in num_cols],
+            "Std": [df[c].std() for c in num_cols],
+            "Min": [df[c].min() for c in num_cols],
+            "Max": [df[c].max() for c in num_cols],
+        })
+        st.dataframe(stats_df.round(2), use_container_width=True)
 
-if len(cat_cols) > 0:
-    cat_summary = pd.DataFrame({
-        "Column": cat_cols,
-        "Most Frequent Value": [df[col].mode()[0] for col in cat_cols],
-        "Frequency": [df[col].value_counts().iloc[0] for col in cat_cols]
-    })
-    st.dataframe(cat_summary, use_container_width=True)
-else:
-    st.info("No categorical columns detected.")
-# ---------------- Column Types ----------------
-num_cols = df.select_dtypes(include=np.number).columns.tolist()
-cat_cols = df.select_dtypes(exclude=np.number).columns.tolist()
-text_cols = cat_cols.copy()
+    if st.button("📈 Step 3: Go to Visualization"):
+        st.session_state.show_viz = True
 
-# ---------------- Visualization ----------------
-st.subheader("📈 Interactive Visualization")
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    x_col = st.selectbox("X Axis", df.columns)
-with col2:
-    y_col = st.selectbox("Y Axis", num_cols)
-with col3:
-    chart_type = st.selectbox("Chart Type", ["Scatter", "Bar", "Line", "Box", "Histogram", "Pie", "Heatmap"])
-with col4:
-    color_col = st.selectbox("Color (optional)", [None]+df.columns.tolist())
+# ================= Step 3: Visualization =================
+if st.session_state.show_viz:
+    st.subheader("📈 Interactive Visualization")
 
-if chart_type == "Histogram":
-    fig = px.histogram(df, x=x_col, color=color_col)
-elif chart_type == "Bar":
-    fig = px.bar(df, x=x_col, y=y_col, color=color_col)
-elif chart_type == "Line":
-    fig = px.line(df, x=x_col, y=y_col, color=color_col)
-elif chart_type == "Box":
-    fig = px.box(df, x=x_col, y=y_col, color=color_col)
-elif chart_type == "Pie":
-    fig = px.pie(df, names=x_col, values=y_col if y_col else None, color=color_col)
-elif chart_type == "Heatmap":
-    corr = df[num_cols].corr()
-    fig = px.imshow(corr, text_auto=True, color_continuous_scale='Viridis')
-else:
-    fig = px.scatter(df, x=x_col, y=y_col, color=color_col)
+    num_cols = df.select_dtypes(include=np.number).columns.tolist()
 
-st.plotly_chart(fig, use_container_width=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        x_col = st.selectbox("X Axis", df.columns)
+    with c2:
+        y_col = st.selectbox("Y Axis", num_cols)
+    with c3:
+        chart_type = st.selectbox(
+            "Chart Type",
+            ["Scatter", "Bar", "Line", "Box", "Histogram", "Pie", "Heatmap"]
+        )
+    with c4:
+        color_col = st.selectbox("Color", [None] + df.columns.tolist())
 
-# ---------------- Machine Learning ----------------
-st.subheader("🧠 Machine Learning")
-with st.expander("⚙️ Model Settings", expanded=True):
-    target = st.selectbox("🎯 Select Target Column", df.columns)
-    features = st.multiselect("📌 Select Feature Columns", [col for col in df.columns if col != target], default=[col for col in df.columns if col != target])
-
-X = df[features]
-y = df[target]
-
-if y.nunique() == 2 and y.dtype != np.number:
-    le = LabelEncoder()
-    y = le.fit_transform(y)
-    st.info(f"Binary target detected. Values converted to 0/1.")
-
-# Fill missing values
-X = X.copy()
-for col in X.columns:
-    if X[col].dtype == 'number' or np.issubdtype(X[col].dtype, np.number):
-        X[col].fillna(X[col].mean(), inplace=True)
+    if chart_type == "Histogram":
+        fig = px.histogram(df, x=x_col, color=color_col)
+    elif chart_type == "Bar":
+        fig = px.bar(df, x=x_col, y=y_col, color=color_col)
+    elif chart_type == "Line":
+        fig = px.line(df, x=x_col, y=y_col, color=color_col)
+    elif chart_type == "Box":
+        fig = px.box(df, x=x_col, y=y_col, color=color_col)
+    elif chart_type == "Pie":
+        fig = px.pie(df, names=x_col)
+    elif chart_type == "Heatmap":
+        fig = px.imshow(df[num_cols].corr(), text_auto=True)
     else:
-        X[col].fillna(X[col].astype(str).mode()[0], inplace=True)
+        fig = px.scatter(df, x=x_col, y=y_col, color=color_col)
 
-# Train/Test split with fallback
-try:
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
-except ValueError:
-    st.warning("Stratify failed. Splitting without stratify.")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+    st.plotly_chart(fig, use_container_width=True)
 
-# Text columns safe handling
-text_cols_existing = [col for col in text_cols if col in X_train.columns]
-if len(text_cols_existing) > 0:
-    for col in text_cols_existing:
-        X_train[col] = X_train[col].astype(str).fillna('')
-        X_test[col] = X_test[col].astype(str).fillna('')
-    X_train['__text_combined__'] = X_train[text_cols_existing].agg(' '.join, axis=1)
-    X_test['__text_combined__'] = X_test[text_cols_existing].agg(' '.join, axis=1)
-    text_feature = '__text_combined__'
-else:
-    text_feature = None
+    if st.button("🧠 Step 4: Go to Machine Learning"):
+        st.session_state.show_ml = True
 
-numeric_features = X.select_dtypes(include=np.number).columns.tolist()
-categorical_features = [col for col in X.select_dtypes(exclude=np.number).columns.tolist() if col not in text_cols_existing]
+# ================= Step 4: Machine Learning =================
+if st.session_state.show_ml:
+    st.subheader("🧠 Machine Learning")
 
-transformers = [('num', StandardScaler(), numeric_features)]
-if categorical_features:
-    transformers.append(('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features))
-if text_feature:
-    transformers.append(('text', TfidfVectorizer(), text_feature))
+    target = st.selectbox("🎯 Target Column", df.columns)
+    features = st.multiselect(
+        "📌 Feature Columns",
+        [c for c in df.columns if c != target],
+        default=[c for c in df.columns if c != target]
+    )
 
-preprocessor = ColumnTransformer(transformers=transformers)
+    X = df[features].copy()
+    y = df[target]
 
-# Multi-model dictionary for Auto Recommendation
-models_dict = {
-    'Logistic Regression': LogisticRegression(max_iter=1000),
-    'Random Forest': RandomForestClassifier(n_estimators=200, random_state=42),
-    'Gradient Boosting': GradientBoostingClassifier(),
-    'SVM': SVC(probability=True),
-    'KNN': KNeighborsClassifier()
-}
+    if y.nunique() == 2 and y.dtype != np.number:
+        y = LabelEncoder().fit_transform(y)
 
-train_btn = st.button("🚀 Train & Recommend Model")
+    for col in X.columns:
+        if np.issubdtype(X[col].dtype, np.number):
+            X[col].fillna(X[col].mean(), inplace=True)
+        else:
+            X[col].fillna(X[col].mode()[0], inplace=True)
 
-if train_btn:
-    best_acc = 0
-    best_model_name = None
-    best_model_pipeline = None
-    for name, clf in models_dict.items():
-        model_pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', clf)])
-        try:
-            cv_scores = cross_val_score(model_pipeline, X_train, y_train, cv=3, scoring='accuracy')
-            mean_score = np.mean(cv_scores)
-            st.write(f"{name} CV Accuracy: {mean_score:.2%}")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.25, random_state=42
+    )
+
+    num_features = X.select_dtypes(include=np.number).columns.tolist()
+    cat_features = X.select_dtypes(exclude=np.number).columns.tolist()
+
+    preprocessor = ColumnTransformer([
+        ("num", StandardScaler(), num_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)
+    ])
+
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(n_estimators=200),
+        "Gradient Boosting": GradientBoostingClassifier(),
+        "SVM": SVC(probability=True),
+        "KNN": KNeighborsClassifier()
+    }
+
+    if st.button("🚀 Step 5: Train & Recommend Model"):
+        best_acc = 0
+        best_model = None
+        best_name = ""
+
+        for name, clf in models.items():
+            pipe = Pipeline([
+                ("prep", preprocessor),
+                ("model", clf)
+            ])
+            scores = cross_val_score(pipe, X_train, y_train, cv=3)
+            mean_score = scores.mean()
+            st.write(f"{name}: {mean_score:.2%}")
+
             if mean_score > best_acc:
                 best_acc = mean_score
-                best_model_name = name
-                best_model_pipeline = model_pipeline
-        except Exception as e:
-            st.write(f"{name} failed: {e}")
+                best_model = pipe
+                best_name = name
 
-    st.success(f"Best Model: {best_model_name} with CV Accuracy: {best_acc:.2%}")
+        st.success(f"Best Model: {best_name}")
 
-    # Fit best model
-    best_model_pipeline.fit(X_train, y_train)
-    preds = best_model_pipeline.predict(X_test)
+        best_model.fit(X_train, y_train)
+        preds = best_model.predict(X_test)
 
-    acc = accuracy_score(y_test, preds)
-    cm = confusion_matrix(y_test, preds)
+        st.metric("Test Accuracy", f"{accuracy_score(y_test, preds):.2%}")
 
-    st.subheader("🏆 Test Performance")
-    st.metric("Test Accuracy", f"{acc:.2%}")
+        st.markdown("### 📊 Confusion Matrix")
+        st.plotly_chart(px.imshow(confusion_matrix(y_test, preds), text_auto=True))
 
-    st.markdown("### 📊 Confusion Matrix")
-    fig_cm = px.imshow(cm, text_auto=True, color_continuous_scale='Viridis')
-    st.plotly_chart(fig_cm, use_container_width=True)
+        st.markdown("### 📄 Classification Report")
+        st.text(classification_report(y_test, preds))
 
-    st.markdown("### 📄 Classification Report")
-    st.text(classification_report(y_test, preds))
-
-    st.subheader("📝 Sample Predictions")
-    sample_df = X_test.copy()
-    sample_df['Actual'] = y_test
-    sample_df['Predicted'] = preds
-    st.dataframe(sample_df.head(10), use_container_width=True)
-
+# ---------------- Footer ----------------
 st.markdown("---")
 st.caption("Built with ❤️ using Streamlit | Professional ML Platform")
