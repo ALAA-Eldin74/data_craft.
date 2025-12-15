@@ -12,21 +12,22 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 # ---------------- Page Config ----------------
-st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
-
-# ---------------- Session State ----------------
-for step in ["preview", "desc", "viz", "ml"]:
-    if f"show_{step}" not in st.session_state:
-        st.session_state[f"show_{step}"] = False
+st.set_page_config(
+    page_title="Pro ML Platform",
+    page_icon="🤖",
+    layout="wide"
+)
 
 # ---------------- Sidebar ----------------
 st.sidebar.title("🤖 Pro ML Platform")
-st.sidebar.markdown("Upload → Describe → Visualize → Model → Evaluate")
+st.sidebar.markdown("Upload Dataset → Explore → Visualize → Train → Recommend")
 
-uploaded_file = st.sidebar.file_uploader("📁 Upload Dataset", type=["csv", "xlsx"])
+uploaded_file = st.sidebar.file_uploader(
+    "📁 Upload Dataset",
+    type=["csv", "xlsx"]
+)
 
 if uploaded_file is None:
     st.info("⬅️ Upload a dataset from the sidebar to get started")
@@ -38,56 +39,36 @@ if uploaded_file.name.endswith("csv"):
 else:
     df = pd.read_excel(uploaded_file)
 
-# ================= Step 1: Preview =================
-if st.button("🔍 Step 1: Show Data Preview"):
-    st.session_state.show_preview = True
+# ---------------- Tabs ----------------
+tab1, tab2 = st.tabs(["📊 Dataset Overview", "🧠 ML & Visualization"])
 
-if st.session_state.show_preview:
+# =========================================================
+# ======================= TAB 1 ===========================
+# =========================================================
+with tab1:
     st.subheader("🔍 Data Preview")
-    st.dataframe(df.head(), use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
-    if st.button("📊 Step 2: Go to Dataset Description"):
-        st.session_state.show_desc = True
-
-# ================= Step 2: Description =================
-if st.session_state.show_desc:
-    st.subheader("📊 Dataset Overview & Statistics")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Rows", df.shape[0])
-    with col2:
-        st.metric("Columns", df.shape[1])
-    with col3:
-        st.metric("Missing Values", df.isnull().sum().sum())
-
-    st.markdown("### 🧾 Column Information")
+    st.subheader("🧾 Column Information")
     desc_df = pd.DataFrame({
         "Column": df.columns,
         "Type": df.dtypes.astype(str),
-        "Missing": df.isnull().sum().values,
-        "Unique": df.nunique().values
+        "Missing Values": df.isnull().sum().values,
+        "Unique Values": df.nunique().values
     })
     st.dataframe(desc_df, use_container_width=True)
 
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
     if num_cols:
-        st.markdown("### 📐 Numerical Statistics")
-        stats_df = pd.DataFrame({
-            "Column": num_cols,
-            "Mean": [df[c].mean() for c in num_cols],
-            "Median": [df[c].median() for c in num_cols],
-            "Std": [df[c].std() for c in num_cols],
-            "Min": [df[c].min() for c in num_cols],
-            "Max": [df[c].max() for c in num_cols],
-        })
+        st.subheader("📐 Numerical Statistics")
+        stats_df = df[num_cols].describe().T
         st.dataframe(stats_df.round(2), use_container_width=True)
 
-    if st.button("📈 Step 3: Go to Visualization"):
-        st.session_state.show_viz = True
-
-# ================= Step 3: Visualization =================
-if st.session_state.show_viz:
+# =========================================================
+# ======================= TAB 2 ===========================
+# =========================================================
+with tab2:
+    # ---------------- Visualization ----------------
     st.subheader("📈 Interactive Visualization")
 
     num_cols = df.select_dtypes(include=np.number).columns.tolist()
@@ -96,7 +77,7 @@ if st.session_state.show_viz:
     with c1:
         x_col = st.selectbox("X Axis", df.columns)
     with c2:
-        y_col = st.selectbox("Y Axis", num_cols)
+        y_col = st.selectbox("Y Axis", num_cols if num_cols else df.columns)
     with c3:
         chart_type = st.selectbox(
             "Chart Type",
@@ -122,14 +103,12 @@ if st.session_state.show_viz:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    if st.button("🧠 Step 4: Go to Machine Learning"):
-        st.session_state.show_ml = True
-
-# ================= Step 4: Machine Learning =================
-if st.session_state.show_ml:
+    # ---------------- Machine Learning ----------------
+    st.markdown("---")
     st.subheader("🧠 Machine Learning")
 
     target = st.selectbox("🎯 Target Column", df.columns)
+
     features = st.multiselect(
         "📌 Feature Columns",
         [c for c in df.columns if c != target],
@@ -139,9 +118,12 @@ if st.session_state.show_ml:
     X = df[features].copy()
     y = df[target]
 
-    if y.nunique() == 2 and y.dtype != np.number:
+    # Encode target if binary categorical
+    if y.nunique() == 2 and y.dtype == object:
         y = LabelEncoder().fit_transform(y)
+        st.info("⚠️ Binary classification detected (Medical datasets → Recall / F1 recommended)")
 
+    # Handle missing values
     for col in X.columns:
         if np.issubdtype(X[col].dtype, np.number):
             X[col].fillna(X[col].mean(), inplace=True)
@@ -168,38 +150,54 @@ if st.session_state.show_ml:
         "KNN": KNeighborsClassifier()
     }
 
-    if st.button("🚀 Step 5: Train & Recommend Model"):
-        best_acc = 0
+    metric = st.selectbox(
+        "📏 Model Selection Metric",
+        ["accuracy", "f1", "recall", "precision"]
+    )
+
+    if st.button("🚀 Train & Recommend Best Model"):
+        best_score = 0
         best_model = None
         best_name = ""
+
+        st.markdown("### 🔍 Cross Validation Results")
 
         for name, clf in models.items():
             pipe = Pipeline([
                 ("prep", preprocessor),
                 ("model", clf)
             ])
-            scores = cross_val_score(pipe, X_train, y_train, cv=3)
-            mean_score = scores.mean()
-            st.write(f"{name}: {mean_score:.2%}")
 
-            if mean_score > best_acc:
-                best_acc = mean_score
+            scores = cross_val_score(
+                pipe,
+                X_train,
+                y_train,
+                cv=3,
+                scoring=metric
+            )
+
+            mean_score = scores.mean()
+            st.write(f"**{name}** → {mean_score:.2%}")
+
+            if mean_score > best_score:
+                best_score = mean_score
                 best_model = pipe
                 best_name = name
 
-        st.success(f"Best Model: {best_name}")
+        st.success(f"🧠 Recommended Model based on {metric.upper()}: **{best_name}**")
 
         best_model.fit(X_train, y_train)
         preds = best_model.predict(X_test)
 
-        st.metric("Test Accuracy", f"{accuracy_score(y_test, preds):.2%}")
+        st.metric("✅ Test Accuracy", f"{accuracy_score(y_test, preds):.2%}")
 
-        st.markdown("### 📊 Confusion Matrix")
-        st.plotly_chart(px.imshow(confusion_matrix(y_test, preds), text_auto=True))
+        st.subheader("📊 Confusion Matrix")
+        cm = confusion_matrix(y_test, preds)
+        st.plotly_chart(px.imshow(cm, text_auto=True), use_container_width=True)
 
-        st.markdown("### 📄 Classification Report")
+        st.subheader("📄 Classification Report")
         st.text(classification_report(y_test, preds))
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit | Professional ML Platform")
+st.caption("Built with ❤️ using Streamlit | Pro ML Platform")
