@@ -16,15 +16,20 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline as ImbPipeline
+# ================= FAIL-SAFE SMOTE =================
+try:
+    from imblearn.over_sampling import SMOTE
+    from imblearn.pipeline import Pipeline as ImbPipeline
+    SMOTE_AVAILABLE = True
+except Exception:
+    SMOTE_AVAILABLE = False
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
 
 # ---------------- Sidebar ----------------
 st.sidebar.title("🤖 Pro ML Platform")
-st.sidebar.markdown("Upload → Describe → Visualize → Model → Evaluate")
+st.sidebar.markdown("Upload → Visualize → Model → Evaluate")
 
 uploaded_file = st.sidebar.file_uploader("📁 Upload Dataset", type=["csv", "xlsx"])
 
@@ -104,7 +109,7 @@ class_ratio = pd.Series(y).value_counts(normalize=True)
 imbalance = class_ratio.min() < 0.3
 
 if imbalance:
-    st.warning("⚠️ Dataset is imbalanced. Using F1-score & optional SMOTE.")
+    st.warning("⚠️ Imbalanced dataset detected")
 
 # Train / Test split
 X_train, X_test, y_train, y_test = train_test_split(
@@ -120,27 +125,21 @@ preprocessor = ColumnTransformer([
     ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)
 ])
 
-# SMOTE option
-use_smote = False
-if imbalance:
-    use_smote = st.checkbox("🧪 Use SMOTE to balance classes", value=True)
+# Optional SMOTE
+if imbalance and SMOTE_AVAILABLE:
+    use_smote = st.checkbox("🧪 Use SMOTE (if available)", value=True)
+elif imbalance:
+    st.info("SMOTE not available → using class_weight only")
+    use_smote = False
+else:
+    use_smote = False
 
 # Models
 models = {
-    "Logistic Regression": LogisticRegression(
-        max_iter=1000,
-        class_weight="balanced" if imbalance else None
-    ),
-    "Random Forest": RandomForestClassifier(
-        n_estimators=300,
-        random_state=42,
-        class_weight="balanced" if imbalance else None
-    ),
+    "Logistic Regression": LogisticRegression(max_iter=1000, class_weight="balanced" if imbalance else None),
+    "Random Forest": RandomForestClassifier(n_estimators=300, random_state=42, class_weight="balanced" if imbalance else None),
     "Gradient Boosting": GradientBoostingClassifier(),
-    "SVM": SVC(
-        probability=True,
-        class_weight="balanced" if imbalance else None
-    ),
+    "SVM": SVC(probability=True, class_weight="balanced" if imbalance else None),
     "KNN": KNeighborsClassifier()
 }
 
@@ -152,7 +151,7 @@ if st.button("🚀 Train & Recommend Model"):
     best_name = ""
 
     for name, clf in models.items():
-        if use_smote and imbalance:
+        if use_smote and imbalance and SMOTE_AVAILABLE:
             pipe = ImbPipeline([
                 ("prep", preprocessor),
                 ("smote", SMOTE(random_state=42)),
@@ -175,17 +174,15 @@ if st.button("🚀 Train & Recommend Model"):
 
     st.success(f"🏆 Best Model: {best_name} | CV {metric.upper()}: {best_score:.2%}")
 
-    # Train best model
     best_model.fit(X_train, y_train)
 
-    # Smart threshold for imbalance
+    # Smart threshold
     if imbalance and hasattr(best_model.named_steps["model"], "predict_proba"):
         probs = best_model.predict_proba(X_test)[:, 1]
         preds = (probs > 0.3).astype(int)
     else:
         preds = best_model.predict(X_test)
 
-    # Metrics
     st.subheader("📊 Test Performance")
     st.metric("Accuracy", f"{accuracy_score(y_test, preds):.2%}")
     st.metric("F1 Score", f"{f1_score(y_test, preds):.2%}")
