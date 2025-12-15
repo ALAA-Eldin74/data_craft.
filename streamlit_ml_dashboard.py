@@ -14,7 +14,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from imblearn.over_sampling import SMOTE
 
 # ---------------- Page Config ----------------
 st.set_page_config(page_title="Pro ML Platform", page_icon="🤖", layout="wide")
@@ -121,11 +120,6 @@ with tab2:
 
     # Split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
-
-    # Handle imbalance for binary classification
-    if len(np.unique(y)) == 2:
-        sm = SMOTE(random_state=42)
-        X_train, y_train = sm.fit_resample(X_train, y_train)
 
     num_features = X.select_dtypes(include=np.number).columns.tolist()
     cat_features = X.select_dtypes(exclude=np.number).columns.tolist()
